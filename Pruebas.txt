@@ -1,0 +1,6 @@
+int suma = 25 + 3.5;
+if (suma >= 20) {
+    return "correcto";
+} else {
+    return "error";
+}
