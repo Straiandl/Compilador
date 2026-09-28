@@ -1,27 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Fase 1 - Analizador léxico del traductor.
-Basado en las categorías y números definidos en compilador.inf.
-
-Se conservan las clases de POO del proyecto original y se agrega:
-- Token
-- Lista de tokens
-- Lectura de archivos
-- Identificadores
-- Enteros y reales
-- Cadenas
-- Palabras reservadas
-- Operadores y delimitadores
-- Errores léxicos con línea y columna
-"""
 
 import sys
 
-
-# ============================================================
-# POO DEL PROYECTO ORIGINAL
-# ============================================================
 
 class Alumno:
     def __init__(self, codigo: str):
@@ -117,9 +99,6 @@ class Pila:
         print("  Pila: [ " + " ".join(str(x) for x in self.items) + " ]")
 
 
-# ============================================================
-# TOKEN
-# ============================================================
 
 class Token:
     """Token producido por el analizador léxico."""
@@ -143,10 +122,6 @@ class Token:
     def muestra(self):
         print(self)
 
-
-# ============================================================
-# CONSTANTES DE compilador.inf
-# ============================================================
 
 TIPOS_TOKEN = {
     "identificador": 0,
@@ -227,9 +202,8 @@ class ErrorLexico(Exception):
         return f"Error léxico en línea {self.linea}, columna {self.columna}: {self.mensaje}"
 
 
-# ============================================================
 # ANALIZADOR LÉXICO
-# ============================================================
+
 
 class Lexico:
     def __init__(self, cadena: str = ""):
@@ -400,10 +374,7 @@ class Lexico:
             tokens.append(Token(TIPOS_TOKEN["$"], "$", self.linea, self.columna, "$"))
         return tokens
 
-
-# ============================================================
-# DEMOSTRACIONES
-# ============================================================
+#DEMOSTRACIONES
 
 def ejemplo_polimorfismo():
     print("=" * 70)
@@ -470,3 +441,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
