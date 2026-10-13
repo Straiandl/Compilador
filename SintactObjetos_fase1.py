@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
 
 import sys
 
@@ -99,6 +98,9 @@ class Pila:
         print("  Pila: [ " + " ".join(str(x) for x in self.items) + " ]")
 
 
+# ============================================================
+# TOKEN
+# ============================================================
 
 class Token:
     """Token producido por el analizador léxico."""
@@ -122,6 +124,10 @@ class Token:
     def muestra(self):
         print(self)
 
+
+# ============================================================
+# CONSTANTES DE compilador.inf
+# ============================================================
 
 TIPOS_TOKEN = {
     "identificador": 0,
@@ -202,8 +208,9 @@ class ErrorLexico(Exception):
         return f"Error léxico en línea {self.linea}, columna {self.columna}: {self.mensaje}"
 
 
+# ============================================================
 # ANALIZADOR LÉXICO
-
+# ============================================================
 
 class Lexico:
     def __init__(self, cadena: str = ""):
@@ -374,7 +381,204 @@ class Lexico:
             tokens.append(Token(TIPOS_TOKEN["$"], "$", self.linea, self.columna, "$"))
         return tokens
 
-#DEMOSTRACIONES
+
+# ============================================================
+# ANALIZADOR SINTÁCTICO LR(1)
+# ============================================================
+
+class ParserLR:
+    """Parser LR que carga las reglas y la tabla desde compilador.lr."""
+
+    def __init__(self, archivo_lr="compilador.lr", mostrar_pasos=True):
+        self.archivo_lr = archivo_lr
+        self.mostrar_pasos = mostrar_pasos
+        self.id_reglas = []
+        self.longitudes_reglas = []
+        self.nombres_reglas = []
+        self.tabla = []
+        self.columnas = 0
+        self._cargar_tabla()
+
+    def _cargar_tabla(self):
+        """Carga reglas, dimensiones y matriz del archivo .lr."""
+        try:
+            with open(self.archivo_lr, "r", encoding="utf-8-sig") as archivo:
+                lineas = [linea.strip() for linea in archivo if linea.strip()]
+        except OSError as exc:
+            raise OSError(f"No se pudo abrir la tabla LR '{self.archivo_lr}': {exc}")
+
+        try:
+            indice = 0
+            cantidad_reglas = int(lineas[indice].split()[0])
+            indice += 1
+
+            for numero in range(cantidad_reglas):
+                partes = lineas[indice].split()
+                indice += 1
+                if len(partes) < 3:
+                    raise ValueError(
+                        f"La definición de la regla {numero + 1} está incompleta."
+                    )
+                self.id_reglas.append(int(partes[0]))
+                self.longitudes_reglas.append(int(partes[1]))
+                self.nombres_reglas.append(partes[2])
+
+            dimensiones = lineas[indice].split()
+            indice += 1
+            if len(dimensiones) != 2:
+                raise ValueError("No se encontraron las dimensiones de la tabla LR.")
+
+            filas = int(dimensiones[0])
+            self.columnas = int(dimensiones[1])
+
+            for fila_num in range(filas):
+                if indice >= len(lineas):
+                    raise ValueError(f"Falta la fila {fila_num} de la tabla LR.")
+                fila = [int(valor) for valor in lineas[indice].split()]
+                indice += 1
+                if len(fila) != self.columnas:
+                    raise ValueError(
+                        f"La fila {fila_num} tiene {len(fila)} columnas; "
+                        f"se esperaban {self.columnas}."
+                    )
+                self.tabla.append(fila)
+
+            if len(self.id_reglas) != cantidad_reglas:
+                raise ValueError("La cantidad de reglas leídas no coincide.")
+
+        except (IndexError, ValueError) as exc:
+            raise ValueError(f"Formato inválido en '{self.archivo_lr}': {exc}") from exc
+
+        if self.mostrar_pasos:
+            print(
+                f"Tabla LR cargada: {len(self.id_reglas)} reglas, "
+                f"{len(self.tabla)} estados, {self.columnas} columnas."
+            )
+
+    def analizar(self, tokens):
+        """Ejecuta shift/reduce sobre la secuencia de Token."""
+        if not tokens:
+            print("Error: la lista de tokens está vacía.")
+            return False
+
+        pila = Pila()
+        pila.push(Terminal(TIPOS_TOKEN["$"], "$"))
+        pila.push(Estado(0))
+        posicion = 0
+        paso = 1
+        max_pasos = 100000
+
+        while paso <= max_pasos:
+            if posicion >= len(tokens):
+                print("Error interno: se agotaron los tokens antes de encontrar '$'.")
+                return False
+
+            token = tokens[posicion]
+            elemento_tope = pila.top()
+            if not isinstance(elemento_tope, Estado):
+                print("Error interno: el tope de la pila no es un Estado.")
+                return False
+
+            estado = elemento_tope.estado
+            columna = token.tipo
+
+            if estado < 0 or estado >= len(self.tabla):
+                print(f"Error interno: estado LR fuera de rango: {estado}.")
+                return False
+            if columna < 0 or columna >= self.columnas:
+                print(
+                    f"Error interno: token {token.nombre!r} usa la columna "
+                    f"inválida {columna}."
+                )
+                return False
+
+            accion = self.tabla[estado][columna]
+
+            if self.mostrar_pasos:
+                print(f"\nPaso {paso}")
+                pila.muestra()
+                print(
+                    f"  Entrada: {token.lexema!r} ({token.nombre}, "
+                    f"tipo {token.tipo})"
+                )
+                print(f"  Estado: {estado}; acción de tabla: {accion}")
+
+            # En el formato del profesor, -1 representa aceptación.
+            if accion == -1:
+                print("\n>>> ANÁLISIS SINTÁCTICO: CADENA ACEPTADA <<<")
+                return True
+
+            # Un valor positivo en columna terminal representa shift.
+            if accion > 0:
+                if self.mostrar_pasos:
+                    print(f"  Shift: entrar al estado {accion}.")
+                pila.push(Terminal(token.tipo, token.lexema))
+                pila.push(Estado(accion))
+                posicion += 1
+
+            # -2 corresponde a la regla 1, -3 a la regla 2, etc.
+            elif accion <= -2:
+                indice_regla = abs(accion) - 2
+                if indice_regla < 0 or indice_regla >= len(self.id_reglas):
+                    print(f"Error interno: reducción desconocida {accion}.")
+                    return False
+
+                longitud = self.longitudes_reglas[indice_regla]
+                id_no_terminal = self.id_reglas[indice_regla]
+                nombre_no_terminal = self.nombres_reglas[indice_regla]
+
+                if self.mostrar_pasos:
+                    print(
+                        f"  Reduce por R{indice_regla + 1}: "
+                        f"{nombre_no_terminal}; longitud {longitud}."
+                    )
+
+                # Por cada símbolo de la producción hay un símbolo y un estado.
+                for _ in range(longitud * 2):
+                    if pila.is_empty():
+                        print("Error interno: la pila se vació durante una reducción.")
+                        return False
+                    pila.pop()
+
+                tope = pila.top()
+                if not isinstance(tope, Estado):
+                    print("Error interno: se esperaba un Estado tras la reducción.")
+                    return False
+
+                estado_anterior = tope.estado
+                if not 0 <= id_no_terminal < self.columnas:
+                    print(f"Error interno: GOTO inválido para {nombre_no_terminal}.")
+                    return False
+
+                nuevo_estado = self.tabla[estado_anterior][id_no_terminal]
+                if nuevo_estado <= 0:
+                    print(
+                        "Error interno: transición GOTO inválida para "
+                        f"{nombre_no_terminal} desde el estado {estado_anterior}."
+                    )
+                    return False
+
+                pila.push(NoTerminal(id_no_terminal, nombre_no_terminal))
+                pila.push(Estado(nuevo_estado))
+
+            # Cero significa que la tabla no permite esa acción.
+            else:
+                print(
+                    "\n>>> ERROR SINTÁCTICO: token inesperado "
+                    f"{token.lexema!r} en línea {token.linea}, "
+                    f"columna {token.columna}. <<<"
+                )
+                return False
+
+            paso += 1
+
+        print("Error: se alcanzó el límite de pasos del parser.")
+        return False
+
+
+# ============================================================
+# DEMOSTRACIONES
+# ============================================================
 
 def ejemplo_polimorfismo():
     print("=" * 70)
@@ -402,18 +606,18 @@ def ejemplo_pila():
     print("Top:", pila.top())
 
 
-def analizar_archivo(nombre_archivo: str):
+def analizar_archivo(nombre_archivo: str, archivo_lr="compilador.lr"):
     print("=" * 70)
-    print(f"ANÁLISIS LÉXICO: {nombre_archivo}")
+    print(f"ANÁLISIS DEL ARCHIVO: {nombre_archivo}")
     print("=" * 70)
     try:
         lexico = Lexico.desde_archivo(nombre_archivo)
         tokens = lexico.tokenizar()
     except OSError as exc:
-        print(f"No se pudo leer el archivo: {exc}")
+        print(f"No se pudo leer el archivo de entrada: {exc}")
         return 1
 
-    print("\nTOKENS")
+    print("\nTOKENS GENERADOS")
     print("-" * 70)
     for token in tokens:
         print(token)
@@ -423,22 +627,39 @@ def analizar_archivo(nombre_archivo: str):
     if lexico.errores:
         for error in lexico.errores:
             print(error)
-    else:
-        print("No se encontraron errores léxicos.")
-    return 0
+        print("\nNo se ejecuta el parser porque hay errores léxicos.")
+        return 1
+    print("No se encontraron errores léxicos.")
 
+    try:
+        parser = ParserLR(archivo_lr=archivo_lr, mostrar_pasos=True)
+    except (OSError, ValueError) as exc:
+        print(f"No se pudo cargar el parser LR: {exc}")
+        return 1
+
+    print("\nINICIANDO ANÁLISIS SINTÁCTICO")
+    resultado = parser.analizar(tokens)
+    return 0 if resultado else 1
 
 def main():
-    if len(sys.argv) == 2:
-        return analizar_archivo(sys.argv[1])
+    import argparse
+    from pathlib import Path
 
-    ejemplo_polimorfismo()
-    ejemplo_pila()
-    print("\nPara analizar un archivo:")
-    print("python SintactObjetos_fase1.py programa.txt")
-    return 0
+    parser_args = argparse.ArgumentParser(
+        description="Analizador léxico y sintáctico LR(1)."
+    )
+    parser_args.add_argument(
+        "archivo_fuente",
+        help="Archivo .txt que contiene el programa que se analizará."
+    )
+    parser_args.add_argument(
+        "--lr",
+        default=str(Path(__file__).with_name("compilador.lr")),
+        help="Ruta del archivo de tabla LR (por defecto, junto al script)."
+    )
+    argumentos = parser_args.parse_args()
+    return analizar_archivo(argumentos.archivo_fuente, argumentos.lr)
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
